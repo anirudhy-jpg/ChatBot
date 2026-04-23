@@ -109,7 +109,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   const flushRafRef = useRef<number | null>(null);
   const userId = user?.id ?? "";
 
-  const updateAssistantMessage = (targetMessageId: string, nextChunk: string) => {
+  const updateAssistantMessage = (
+    targetMessageId: string,
+    nextChunk: string,
+  ) => {
     setMessages((currentMessages) =>
       currentMessages.map((message) =>
         message._id === targetMessageId
@@ -250,7 +253,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
 
         try {
           const parsedError = JSON.parse(errorText) as { error?: string };
-          throw new Error(parsedError.error || "Network error or empty response");
+          throw new Error(
+            parsedError.error || "Network error or empty response",
+          );
         } catch {
           throw new Error(errorText || "Network error or empty response");
         }
@@ -310,7 +315,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       streamBuffer += decoder.decode();
-      const { payloads: trailingPayloads } = readSseFrames(`${streamBuffer}\n\n`);
+      const { payloads: trailingPayloads } = readSseFrames(
+        `${streamBuffer}\n\n`,
+      );
       for (const payload of trailingPayloads) {
         handlePayload(payload);
       }
@@ -339,6 +346,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(false);
     }
   };
+
 
   const resetChat = async () => {
     try {

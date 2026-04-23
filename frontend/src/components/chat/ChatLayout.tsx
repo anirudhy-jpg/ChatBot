@@ -4,7 +4,6 @@ import { useChatContext } from "../../contexts/ChatContext";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { FaUser } from "react-icons/fa";
 import { HiOutlineSparkles } from "react-icons/hi";
-import { FiCopy, FiCheck } from "react-icons/fi";
 import type { FormEvent, KeyboardEvent } from "react";
 
 interface Message {
@@ -12,6 +11,15 @@ interface Message {
   role: "user" | "assistant";
   content: string;
 }
+
+const StreamingCursor = ({ theme }: { theme: "light" | "dark" }) => (
+  <span
+    aria-hidden="true"
+    className={`ml-1 inline-block h-5 w-2 animate-pulse rounded-sm align-[-0.2em] ${
+      theme === "dark" ? "bg-slate-300" : "bg-slate-500"
+    }`}
+  />
+);
 
 export const ChatLayout = () => {
   const { signOut } = useClerk();
@@ -83,10 +91,11 @@ export const ChatLayout = () => {
           : "bg-slate-50 text-slate-900"
       }`}
     >
-      <div className="grid h-full grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="grid h-full grid-cols-1 min-h-0  lg:grid-cols-[260px_minmax(0,1fr)]">
+
         {/* Sidebar */}
         <aside
-          className={`hidden h-full flex-col lg:flex border-r ${
+          className={`hidden h-full min-h-0 flex-col lg:flex border-r ${
             theme === "dark"
               ? "border-slate-700 bg-slate-900 text-slate-200"
               : "border-slate-200 bg-white text-slate-800"
@@ -137,7 +146,7 @@ export const ChatLayout = () => {
                       </div>
                     </button>
 
-                    {/* ❌ NOT CHANGED */}
+            
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -241,7 +250,7 @@ export const ChatLayout = () => {
           </header>
 
           {/* Messages */}
-          <section className="flex-1 overflow-y-auto">
+          <section className="flex-1 min-h-0  overflow-y-auto">
             <div className="w-full max-w-3xl mx-auto px-2 py-5">
               {booting ? (
                 <div className="flex justify-center text-slate-500 text-sm">
@@ -256,6 +265,12 @@ export const ChatLayout = () => {
               ) : (
                 <div className="space-y-2.5">
                   {messages.map((message: Message, index: number) => (
+                    (() => {
+                      const isStreamingAssistant =
+                        message.role === "assistant" &&
+                        message._id === streamingMessageId;
+
+                      return (
                     <div
                       key={message._id || index}
                       className={`flex items-start gap-2 ${
@@ -285,6 +300,9 @@ export const ChatLayout = () => {
                           <>
                             <div className="min-w-0 overflow-hidden">
                               <MarkdownRenderer content={message.content} />
+                              {isStreamingAssistant && (
+                                <StreamingCursor theme={theme} />
+                              )}
                             </div>
                           </>
                         ) : (
@@ -301,6 +319,8 @@ export const ChatLayout = () => {
                         </div>
                       )}
                     </div>
+                      );
+                    })()
                   ))}
                 </div>
               )}
