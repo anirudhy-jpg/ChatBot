@@ -22,6 +22,38 @@ interface Chat {
   messageCount: number;
 }
 
+interface ChatListResponse {
+  chats?: Chat[];
+}
+
+interface StreamEvent {
+  type: "meta" | "chunk" | "done" | "error";
+  chatId?: string;
+  content?: string;
+  error?: string;
+}
+
+const readSseFrames = (buffer: string) => {
+  const frames = buffer.split(/\r?\n\r?\n/);
+  const remaining = frames.pop() ?? "";
+  const payloads = frames
+    .map((frame) => {
+      const dataLines = frame
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.replace(/^data:\s?/, ""));
+
+      if (dataLines.length === 0) {
+        return "";
+      }
+
+      return dataLines.join("\n");
+    })
+    .filter(Boolean);
+
+  return { payloads, remaining };
+};
+
 interface ChatContextType {
   booting: boolean;
   chatId: string | null;
@@ -31,6 +63,7 @@ interface ChatContextType {
   messages: Message[];
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   prompt: string;
+  streamingMessageId: string | null;
   userId: string;
   selectedModel: string;
 
@@ -41,7 +74,7 @@ interface ChatContextType {
   submitMessage: () => Promise<void>;
   createNewChat: () => void;
   deleteChat: (chatId: string) => Promise<void>;
-  loadChats: () => Promise<void>;
+  loadChats: () => Promise<ChatListResponse>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -66,17 +99,62 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState("");
   const [chatId, setChatId] = useState<string | null>(null);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
+    null,
+  );
   const [selectedModel, setSelectedModel] = useState("gemini");
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const pendingAssistantChunkRef = useRef("");
+  const flushRafRef = useRef<number | null>(null);
   const userId = user?.id ?? "";
+
+  const updateAssistantMessage = (targetMessageId: string, nextChunk: string) => {
+    setMessages((currentMessages) =>
+      currentMessages.map((message) =>
+        message._id === targetMessageId
+          ? { ...message, content: message.content + nextChunk }
+          : message,
+      ),
+    );
+  };
+
+  const flushPendingAssistantChunks = (targetMessageId: string) => {
+    if (!pendingAssistantChunkRef.current) {
+      return;
+    }
+
+    updateAssistantMessage(targetMessageId, pendingAssistantChunkRef.current);
+    pendingAssistantChunkRef.current = "";
+  };
+
+  const queueAssistantChunk = (targetMessageId: string, nextChunk: string) => {
+    pendingAssistantChunkRef.current += nextChunk;
+
+    if (flushRafRef.current !== null) {
+      return;
+    }
+
+    flushRafRef.current = window.requestAnimationFrame(() => {
+      flushRafRef.current = null;
+      flushPendingAssistantChunks(targetMessageId);
+    });
+  };
+
+  const removeMessageById = (targetMessageId: string) => {
+    setMessages((currentMessages) =>
+      currentMessages.filter((message) => message._id !== targetMessageId),
+    );
+  };
 
   const loadChats = async () => {
     try {
       const data = await fetchChats(userId);
       setChats(data.chats || []);
+      return data as ChatListResponse;
     } catch (err) {
       console.error("Failed to load chats:", err);
+      return { chats: [] } as ChatListResponse;
     }
   };
 
@@ -101,7 +179,17 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [isLoaded, userId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    return () => {
+      if (flushRafRef.current !== null) {
+        window.cancelAnimationFrame(flushRafRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: loading ? "auto" : "smooth",
+    });
   }, [messages, loading]);
 
   const selectChat = async (selectedChatId: string) => {
@@ -129,6 +217,16 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
       content: "",
       _id: `a-${Date.now()}`,
     };
+    const assistantMessageId = assistantMessage._id as string;
+    let resolvedChatId = chatId;
+
+    setStreamingMessageId(assistantMessageId);
+    pendingAssistantChunkRef.current = "";
+
+    if (flushRafRef.current !== null) {
+      window.cancelAnimationFrame(flushRafRef.current);
+      flushRafRef.current = null;
+    }
 
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
 
@@ -136,6 +234,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
+          Accept: "text/event-stream",
           "Content-Type": "application/json",
           "x-user-id": userId,
         },
@@ -147,46 +246,96 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
       });
 
       if (!response.ok || !response.body) {
-        throw new Error("Network error or empty response");
+        const errorText = await response.text();
+
+        try {
+          const parsedError = JSON.parse(errorText) as { error?: string };
+          throw new Error(parsedError.error || "Network error or empty response");
+        } catch {
+          throw new Error(errorText || "Network error or empty response");
+        }
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let streamBuffer = "";
 
-      let fullText = "";
+      const handlePayload = (payload: string) => {
+        let parsed: StreamEvent;
+
+        try {
+          parsed = JSON.parse(payload) as StreamEvent;
+        } catch {
+          const cleanedPayload = payload.replace(/^data:\s?/gm, "");
+          if (cleanedPayload) {
+            queueAssistantChunk(assistantMessageId, cleanedPayload);
+          }
+          return;
+        }
+
+        if (parsed.type === "meta" && parsed.chatId) {
+          resolvedChatId = parsed.chatId;
+          setChatId(parsed.chatId);
+          return;
+        }
+
+        if (parsed.type === "chunk" && parsed.content) {
+          queueAssistantChunk(assistantMessageId, parsed.content);
+          return;
+        }
+
+        if (parsed.type === "done" && parsed.chatId) {
+          resolvedChatId = parsed.chatId;
+          setChatId(parsed.chatId);
+          return;
+        }
+
+        if (parsed.type === "error") {
+          throw new Error(parsed.error || "Streaming failed");
+        }
+      };
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
+        streamBuffer += decoder.decode(value, { stream: true });
 
-        const lines = chunk.split("\n");
+        const { payloads, remaining } = readSseFrames(streamBuffer);
+        streamBuffer = remaining;
 
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-
-          const text = line.replace("data: ", "").trim();
-
-          if (text === "[DONE]") continue;
-
-          fullText += text;
-
-          setMessages((prev) => {
-            const updated = [...prev];
-            updated[updated.length - 1] = {
-              ...updated[updated.length - 1],
-              content: fullText,
-            };
-            return updated;
-          });
+        for (const payload of payloads) {
+          handlePayload(payload);
         }
       }
 
-      if (!chatId) await loadChats();
+      streamBuffer += decoder.decode();
+      const { payloads: trailingPayloads } = readSseFrames(`${streamBuffer}\n\n`);
+      for (const payload of trailingPayloads) {
+        handlePayload(payload);
+      }
+
+      flushPendingAssistantChunks(assistantMessageId);
+
+      await loadChats();
+
+      if (resolvedChatId) {
+        setChatId(resolvedChatId);
+      }
     } catch (err: any) {
+      if (!pendingAssistantChunkRef.current) {
+        removeMessageById(assistantMessageId);
+      }
+
       setError(err.message || "Failed to send message");
     } finally {
+      if (flushRafRef.current !== null) {
+        window.cancelAnimationFrame(flushRafRef.current);
+        flushRafRef.current = null;
+      }
+
+      flushPendingAssistantChunks(assistantMessageId);
+      setStreamingMessageId(null);
       setLoading(false);
     }
   };
@@ -235,6 +384,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         messages,
         messagesEndRef,
         prompt,
+        streamingMessageId,
         userId,
         selectedModel,
         setSelectedModel,

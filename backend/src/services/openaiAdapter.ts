@@ -2,6 +2,8 @@ import OpenAI from "openai";
 import { AIService, Message } from "./ai.service";
 
 const apiKey = process.env.OPENAI_API_KEY?.trim();
+const CODE_FORMAT_INSTRUCTION =
+  "When you include code in a response, always wrap it in fenced markdown code blocks and add the language when you can.";
 
 export class OpenAIAdapter implements AIService {
   private openai: OpenAI | null;
@@ -25,7 +27,10 @@ export class OpenAIAdapter implements AIService {
 
     const response = await this.openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages,
+      messages: [
+        { role: "system", content: CODE_FORMAT_INSTRUCTION },
+        ...messages,
+      ],
     });
 
     return response.choices[0].message.content || "";
@@ -42,7 +47,10 @@ export class OpenAIAdapter implements AIService {
 
     const stream = await this.openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages,
+      messages: [
+        { role: "system", content: CODE_FORMAT_INSTRUCTION },
+        ...messages,
+      ],
       stream: true,
     });
 

@@ -26,6 +26,7 @@ export const ChatLayout = () => {
     messages,
     messagesEndRef,
     prompt,
+    streamingMessageId,
     selectedModel,
     setSelectedModel,
     selectChat,
@@ -272,17 +273,17 @@ export const ChatLayout = () => {
 
                       {/* Message */}
                       <div
-                        className={`relative group max-w-[70%] px-3 py-2 rounded-lg shadow-sm ${
+                        className={`relative group ${
                           message.role === "user"
-                            ? "bg-indigo-600 text-white"
+                            ? "max-w-[70%] rounded-lg bg-indigo-600 px-3 py-2 text-white shadow-sm"
                             : theme === "dark"
-                              ? "bg-slate-800 border border-slate-700 text-slate-100"
-                              : "bg-indigo-50 border border-indigo-100 text-slate-900"
+                              ? "inline-block max-w-[min(88%,52rem)] rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-slate-100 shadow-sm"
+                              : "inline-block max-w-[min(88%,52rem)] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 shadow-sm"
                         }`}
                       >
                         {message.role === "assistant" ? (
                           <>
-                            <div className="min-w-0 text-[13px] leading-5 whitespace-pre-wrap">
+                            <div className="min-w-0 overflow-hidden">
                               <MarkdownRenderer content={message.content} />
                             </div>
                           </>

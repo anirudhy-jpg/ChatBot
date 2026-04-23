@@ -1,15 +1,27 @@
 import { Request, Response } from "express";
 import { createMessageSchema } from "./chat.validation";
 import { getAIService } from "../../services/aiFactory";
-import { Chat } from "./chat.model";
+import {
+  appendMessageToChat,
+  createChat,
+  deleteChatById,
+  deleteChatsByUserId,
+  findChatById,
+  findLatestChatByUserId,
+  listChatsByUserId,
+} from "./chat.store";
+
+const writeSseEvent = (
+  res: Response,
+  payload: Record<string, unknown>,
+) => {
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+};
 
 export const getMessages = async (req: Request, res: Response) => {
   try {
     const userId = res.locals.userId as string;
-
-    const chat = await Chat.findOne({ userId })
-      .sort({ createdAt: -1 })
-      .lean();
+    const chat = await findLatestChatByUserId(userId);
 
     const messages = chat?.messages ?? [];
     const chatId = chat?._id ?? null;
@@ -25,16 +37,18 @@ export const getMessages = async (req: Request, res: Response) => {
 export const getChatHistoryById = async (req: Request, res: Response) => {
   try {
     const userId = res.locals.userId as string;
-    const { chatId } = req.params;
+    const chatId = String(req.params.chatId);
 
-    const chat = await Chat.findById(chatId).lean();
+    const chat = await findChatById(chatId);
 
     if (!chat) {
       return res.status(404).json({ error: "Chat not found" });
     }
 
     if (chat.userId !== userId) {
-      return res.status(403).json({ error: "Unauthorized access to this chat" });
+      return res
+        .status(403)
+        .json({ error: "Unauthorized access to this chat" });
     }
 
     res.json({ messages: chat.messages, chatId: chat._id });
@@ -48,22 +62,7 @@ export const getChatHistoryById = async (req: Request, res: Response) => {
 export const getAllChats = async (req: Request, res: Response) => {
   try {
     const userId = res.locals.userId as string;
-
-    const chats = await Chat.find({ userId })
-      .sort({ updatedAt: -1 })
-      .select("_id title createdAt updatedAt messages")
-      .lean();
-
-    const chatList = chats.map((chat) => ({
-      id: chat._id,
-      title:
-        chat.title ||
-        chat.messages[0]?.content?.slice(0, 30) + "..." ||
-        "New Chat",
-      createdAt: chat.createdAt,
-      updatedAt: chat.updatedAt,
-      messageCount: chat.messages.length,
-    }));
+    const chatList = await listChatsByUserId(userId);
 
     res.json({ chats: chatList });
   } catch (error: any) {
@@ -86,18 +85,22 @@ export const sendMessage = async (req: Request, res: Response) => {
     const { message, chatId, model } = validation.data;
     const userId = res.locals.userId as string;
 
-    let chat = chatId ? await Chat.findById(chatId) : null;
+    let chat = chatId ? await findChatById(chatId) : null;
 
     if (!chat) {
-      chat = await Chat.create({
-        userId,
-        title: message.slice(0, 20),
-        messages: [],
-      });
+      chat = await createChat(userId, message.slice(0, 20));
     }
 
-    // Add user message
-    chat.messages.push({ role: "user", content: message });
+    // Persist the user turn before streaming so chat state stays consistent
+    // even if the provider stream fails midway through.
+    chat = await appendMessageToChat(String(chat._id), {
+      role: "user",
+      content: message,
+    });
+
+    if (!chat) {
+      throw new Error("Chat not found");
+    }
 
     const formattedMessages = chat.messages.map((msg: any) => ({
       role: msg.role,
@@ -109,29 +112,73 @@ export const sendMessage = async (req: Request, res: Response) => {
 
     // 🔥 STREAMING HEADERS
     res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders?.();
+    req.socket.setNoDelay(true);
 
     let fullResponse = "";
+    let clientClosed = false;
 
-    // 🔥 STREAM FROM AI
-    await ai.streamResponse(formattedMessages, (chunk: string) => {
-      fullResponse += chunk;
-      res.write(`data: ${chunk}\n\n`);
+    req.on("close", () => {
+      clientClosed = true;
     });
 
-    // Save final response
-    chat.messages.push({
-      role: "assistant",
-      content: fullResponse,
-    });
+    writeSseEvent(res, { type: "meta", chatId: String(chat._id) });
 
-    await chat.save();
+    try {
+      // Stream chunks to the client as they arrive.
+      await ai.streamResponse(formattedMessages, (chunk: string) => {
+        if (clientClosed || res.writableEnded) {
+          return;
+        }
 
-    res.write("data: [DONE]\n\n");
-    res.end();
+        fullResponse += chunk;
+        writeSseEvent(res, { type: "chunk", content: chunk });
+      });
+
+      if (clientClosed || res.writableEnded) {
+        return;
+      }
+
+      chat = await appendMessageToChat(String(chat._id), {
+        role: "assistant",
+        content: fullResponse,
+      });
+
+      if (!chat) {
+        throw new Error("Failed to save assistant response");
+      }
+
+      writeSseEvent(res, { type: "done", chatId: String(chat._id) });
+      res.end();
+    } catch (streamError: any) {
+      console.error("Streaming error:", streamError);
+
+      if (!clientClosed && !res.writableEnded) {
+        writeSseEvent(res, {
+          type: "error",
+          error: streamError.message || "Streaming failed",
+        });
+      }
+
+      res.end();
+    }
   } catch (error: any) {
     console.error("sendMessage error:", error);
+
+    if (res.headersSent) {
+      if (!res.writableEnded) {
+        writeSseEvent(res, {
+          type: "error",
+          error: error.message || "Failed to send message",
+        });
+      }
+
+      res.end();
+      return;
+    }
 
     res.status(500).json({
       error: error.message || "Failed to send message",
@@ -142,18 +189,18 @@ export const sendMessage = async (req: Request, res: Response) => {
 export const clearMessages = async (req: Request, res: Response) => {
   try {
     const userId = res.locals.userId as string;
-    const { chatId } = req.params;
+    const chatId = String(req.params.chatId);
 
     if (chatId) {
-      const chat = await Chat.findById(chatId);
+      const chat = await findChatById(chatId);
 
       if (!chat || chat.userId !== userId) {
         return res.status(403).json({ error: "Unauthorized" });
       }
 
-      await Chat.findByIdAndDelete(chatId);
+      await deleteChatById(chatId);
     } else {
-      await Chat.deleteMany({ userId });
+      await deleteChatsByUserId(userId);
     }
 
     res.json({ success: true });
