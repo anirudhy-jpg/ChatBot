@@ -106,9 +106,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const pendingAssistantChunkRef = useRef("");
-  const flushRafRef = useRef<number | null>(null);
   const userId = user?.id ?? "";
-
   const updateAssistantMessage = (
     targetMessageId: string,
     nextChunk: string,
@@ -122,27 +120,51 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
     );
   };
 
-  const flushPendingAssistantChunks = (targetMessageId: string) => {
-    if (!pendingAssistantChunkRef.current) {
-      return;
-    }
-
-    updateAssistantMessage(targetMessageId, pendingAssistantChunkRef.current);
-    pendingAssistantChunkRef.current = "";
-  };
-
-  const queueAssistantChunk = (targetMessageId: string, nextChunk: string) => {
+  const queueAssistantChunk = (nextChunk: string) => {
     pendingAssistantChunkRef.current += nextChunk;
-
-    if (flushRafRef.current !== null) {
-      return;
-    }
-
-    flushRafRef.current = window.requestAnimationFrame(() => {
-      flushRafRef.current = null;
-      flushPendingAssistantChunks(targetMessageId);
-    });
   };
+
+  useEffect(() => {
+    if (!streamingMessageId) return;
+
+    let timeoutId: number;
+
+    const type = () => {
+      const pending = pendingAssistantChunkRef.current;
+      if (pending.length > 0) {
+        // Calculate how many characters to type in this tick
+        // Faster if the queue is backing up
+        const totalPending = pending.length;
+        let charsToAdd = 1;
+
+        if (totalPending > 200) charsToAdd = 20;
+        else if (totalPending > 100) charsToAdd = 10;
+        else if (totalPending > 50) charsToAdd = 5;
+        else if (totalPending > 20) charsToAdd = 2;
+
+        const toDisplay = pending.slice(0, charsToAdd);
+        pendingAssistantChunkRef.current = pending.slice(charsToAdd);
+
+        updateAssistantMessage(streamingMessageId, toDisplay);
+
+        // Schedule next character
+        timeoutId = window.setTimeout(type, 16); // ~60fps target
+      } else {
+        if (!loading) {
+          // If we finished the network stream AND the queue is empty
+          setStreamingMessageId(null);
+        } else {
+          // Network still going but queue empty, wait/poll
+          timeoutId = window.setTimeout(type, 30);
+        }
+      }
+    };
+
+    type();
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [streamingMessageId, loading]);
 
   const removeMessageById = (targetMessageId: string) => {
     setMessages((currentMessages) =>
@@ -175,19 +197,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   useEffect(() => {
+    const userId = user?.id;
     if (!isLoaded || !userId) return;
 
     loadMessages(chatId);
     loadChats();
-  }, [isLoaded, userId]);
-
-  useEffect(() => {
-    return () => {
-      if (flushRafRef.current !== null) {
-        window.cancelAnimationFrame(flushRafRef.current);
-      }
-    };
-  }, []);
+  }, [isLoaded, user?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -225,11 +240,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setStreamingMessageId(assistantMessageId);
     pendingAssistantChunkRef.current = "";
-
-    if (flushRafRef.current !== null) {
-      window.cancelAnimationFrame(flushRafRef.current);
-      flushRafRef.current = null;
-    }
 
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
 
@@ -273,7 +283,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         } catch {
           const cleanedPayload = payload.replace(/^data:\s?/gm, "");
           if (cleanedPayload) {
-            queueAssistantChunk(assistantMessageId, cleanedPayload);
+            queueAssistantChunk(cleanedPayload);
           }
           return;
         }
@@ -285,7 +295,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         if (parsed.type === "chunk" && parsed.content) {
-          queueAssistantChunk(assistantMessageId, parsed.content);
+          queueAssistantChunk(parsed.content);
           return;
         }
 
@@ -322,8 +332,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         handlePayload(payload);
       }
 
-      flushPendingAssistantChunks(assistantMessageId);
-
       await loadChats();
 
       if (resolvedChatId) {
@@ -336,17 +344,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
 
       setError(err.message || "Failed to send message");
     } finally {
-      if (flushRafRef.current !== null) {
-        window.cancelAnimationFrame(flushRafRef.current);
-        flushRafRef.current = null;
-      }
-
-      flushPendingAssistantChunks(assistantMessageId);
-      setStreamingMessageId(null);
       setLoading(false);
     }
   };
-
 
   const resetChat = async () => {
     try {

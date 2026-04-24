@@ -1,9 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
 import { AIService, Message } from "./ai.service";
-
-const CODE_FORMAT_INSTRUCTION =
-  "When you include code in a response, always wrap it in fenced markdown code blocks and add the language when you can.";
-
+const CODE_FORMAT_INSTRUCTION = `
+When returning code:
+- ALWAYS wrap code in triple backticks
+- ALWAYS specify the language (e.g., \`\`\`ts, \`\`\`js)
+- NEVER return raw code without formatting
+`;
 export class GeminiAdapter implements AIService {
   private ai: GoogleGenAI | null;
 
@@ -30,14 +32,13 @@ export class GeminiAdapter implements AIService {
     }));
 
     const response = await this.ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.5-flash-lite",
       contents,
     });
 
     return response.text || "gemini response error";
   }
 
-  // 🔥 NEW STREAMING FUNCTION
   async streamResponse(
     messages: Message[],
     onChunk: (chunk: string) => void,
@@ -60,7 +61,7 @@ export class GeminiAdapter implements AIService {
     }));
 
     const stream = await this.ai.models.generateContentStream({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.5-flash-lite",
       contents,
     });
 

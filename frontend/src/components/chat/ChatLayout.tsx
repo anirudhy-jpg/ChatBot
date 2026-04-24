@@ -92,7 +92,6 @@ export const ChatLayout = () => {
       }`}
     >
       <div className="grid h-full grid-cols-1 min-h-0  lg:grid-cols-[260px_minmax(0,1fr)]">
-
         {/* Sidebar */}
         <aside
           className={`hidden h-full min-h-0 flex-col lg:flex border-r ${
@@ -146,7 +145,6 @@ export const ChatLayout = () => {
                       </div>
                     </button>
 
-            
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -264,68 +262,68 @@ export const ChatLayout = () => {
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {messages.map((message: Message, index: number) => (
+                  {messages.map((message: Message, index: number) =>
                     (() => {
                       const isStreamingAssistant =
                         message.role === "assistant" &&
                         message._id === streamingMessageId;
 
                       return (
-                    <div
-                      key={message._id || index}
-                      className={`flex items-start gap-2 ${
-                        message.role === "user"
-                          ? "justify-end"
-                          : "justify-start"
-                      }`}
-                    >
-                      {/* AI Avatar (unchanged) */}
-                      {message.role === "assistant" && (
-                        <div className="w-7 h-7 rounded-full bg-indigo-500 flex items-center justify-center text-white">
-                          <HiOutlineSparkles size={14} />
-                        </div>
-                      )}
-
-                      {/* Message */}
-                      <div
-                        className={`relative group ${
-                          message.role === "user"
-                            ? "max-w-[70%] rounded-lg bg-indigo-600 px-3 py-2 text-white shadow-sm"
-                            : theme === "dark"
-                              ? "inline-block max-w-[min(88%,52rem)] rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-slate-100 shadow-sm"
-                              : "inline-block max-w-[min(88%,52rem)] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 shadow-sm"
-                        }`}
-                      >
-                        {message.role === "assistant" ? (
-                          <>
-                            <div className="min-w-0 overflow-hidden">
-                              <MarkdownRenderer content={message.content} />
-                              {isStreamingAssistant && (
-                                <StreamingCursor theme={theme} />
-                              )}
+                        <div
+                          key={message._id || index}
+                          className={`flex items-start gap-2 ${
+                            message.role === "user"
+                              ? "justify-end"
+                              : "justify-start"
+                          }`}
+                        >
+                          {/* AI Avatar (unchanged) */}
+                          {message.role === "assistant" && (
+                            <div className="w-7 h-7 rounded-full bg-indigo-500 flex items-center justify-center text-white">
+                              <HiOutlineSparkles size={14} />
                             </div>
-                          </>
-                        ) : (
-                          <p className="text-[13px] leading-5 whitespace-pre-wrap">
-                            {message.content}
-                          </p>
-                        )}
-                      </div>
+                          )}
 
-                      {/* User Avatar (unchanged) */}
-                      {message.role === "user" && (
-                        <div className="w-7 h-7 rounded-full bg-slate-300 flex items-center justify-center text-slate-700">
-                          <FaUser size={12} />
+                          {/* Message */}
+                          <div
+                            className={`relative group ${
+                              message.role === "user"
+                                ? "max-w-[70%] rounded-lg bg-indigo-600 px-3 py-2 text-white shadow-sm"
+                                : theme === "dark"
+                                  ? "inline-block max-w-[min(88%,52rem)] rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-slate-100 shadow-sm"
+                                  : "inline-block max-w-[min(88%,52rem)] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 shadow-sm"
+                            }`}
+                          >
+                            {message.role === "assistant" ? (
+                              <>
+                                <div className="min-w-0 overflow-hidden">
+                                  <MarkdownRenderer content={message.content} />
+                                  {isStreamingAssistant && (
+                                    <StreamingCursor theme={theme} />
+                                  )}
+                                </div>
+                              </>
+                            ) : (
+                              <p className="text-[13px] leading-5 whitespace-pre-wrap">
+                                {message.content}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* User Avatar (unchanged) */}
+                          {message.role === "user" && (
+                            <div className="w-7 h-7 rounded-full bg-slate-300 flex items-center justify-center text-slate-700">
+                              <FaUser size={12} />
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
                       );
-                    })()
-                  ))}
+                    })(),
+                  )}
                 </div>
               )}
 
-              {loading && (
+              {(loading || streamingMessageId) && (
                 <div
                   className={`mt-3 text-[13px] animate-pulse ${
                     theme === "dark" ? "text-slate-300" : "text-slate-500"
