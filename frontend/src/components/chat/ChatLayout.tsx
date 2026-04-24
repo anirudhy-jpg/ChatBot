@@ -6,14 +6,14 @@ import { FaUser } from "react-icons/fa";
 import { HiOutlineSparkles } from "react-icons/hi";
 import type { FormEvent, KeyboardEvent } from "react";
 
-/* ─────────────────────────────────────────────────────── types */
+/*types */
 interface Message {
   _id?: string;
   role: "user" | "assistant";
   content: string;
 }
 
-/* ─────────────────────────────────────── streaming cursor dot */
+/* streaming cursor dot */
 const StreamingCursor = ({ theme }: { theme: "light" | "dark" }) => (
   <span
     aria-hidden="true"
@@ -23,7 +23,7 @@ const StreamingCursor = ({ theme }: { theme: "light" | "dark" }) => (
   />
 );
 
-/* ─────────────────────────────────────────── individual bubble */
+/*individual bubble */
 const ChatMessage = React.memo(
   ({
     message,
@@ -101,14 +101,14 @@ const ChatMessage = React.memo(
   },
 );
 
-/* ────────────────────────────────── model badge colours */
+/*  model badge colours */
 const MODEL_META: Record<string, { label: string; color: string }> = {
   nvidia: { label: "NVIDIA", color: "#76b900" },
   gemini: { label: "Gemini", color: "#4285f4" },
   openai: { label: "OpenAI", color: "#10a37f" },
 };
 
-/* ──────────────────────────────────── empty state chips */
+/*  empty state chips */
 const STARTER_PROMPTS = [
   "✨ Explain quantum computing simply",
   "🛠️ Fix a React useEffect bug",
@@ -116,7 +116,7 @@ const STARTER_PROMPTS = [
   "🌍 Translate text to French",
 ];
 
-/* ══════════════════════════════════════ Main Layout ════════════════════════════════════ */
+/* Main Layout  */
 export const ChatLayout = () => {
   const { signOut } = useClerk();
   const { user } = useUser();
@@ -224,7 +224,7 @@ export const ChatLayout = () => {
         {/* ══ LAYOUT GRID ══ */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gridTemplateRows: "1fr", height: "100%", position: "relative" }}>
 
-          {/* ───────────────── SIDEBAR (mobile: overlay, desktop: static) ─────────────────── */}
+          {/*  SIDEBAR (mobile: overlay, desktop: static)  */}
           {/* Mobile backdrop */}
           {sidebarOpen && (
             <div

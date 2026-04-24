@@ -1,15 +1,13 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "dev": "ts-node-dev --respawn src/server.ts"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "main": "dist/server.js",
   "type": "commonjs",
+  "scripts": {
+    "dev": "ts-node-dev src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
   "dependencies": {
     "@clerk/clerk-sdk-node": "^4.13.23",
     "@clerk/express": "^2.1.5",
