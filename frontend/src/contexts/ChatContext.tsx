@@ -102,59 +102,86 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
     null,
   );
-  const [selectedModel, setSelectedModel] = useState("gemini");
+  const [selectedModel, setSelectedModel] = useState(
+    () => localStorage.getItem("chatbot-model") ?? "nvidia",
+  );
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const pendingAssistantChunkRef = useRef("");
+  // Keep a ref to `loading` so the streaming effect can read the latest
+  // value WITHOUT being re-triggered (and spawning a second type() loop)
+  // when `loading` flips to false.
+  const loadingRef = useRef(false);
   const userId = user?.id ?? "";
   const updateAssistantMessage = (
     targetMessageId: string,
     nextChunk: string,
   ) => {
-    setMessages((currentMessages) =>
-      currentMessages.map((message) =>
+    setMessages((currentMessages) => {
+      // Performance optimization: If the message is at the end (common case),
+      // avoid mapping through the entire array.
+      if (
+        currentMessages.length > 0 &&
+        currentMessages[currentMessages.length - 1]._id === targetMessageId
+      ) {
+        const lastMsg = currentMessages[currentMessages.length - 1];
+        const updatedMsg = { ...lastMsg, content: lastMsg.content + nextChunk };
+        return [...currentMessages.slice(0, -1), updatedMsg];
+      }
+
+      return currentMessages.map((message) =>
         message._id === targetMessageId
           ? { ...message, content: message.content + nextChunk }
           : message,
-      ),
-    );
+      );
+    });
   };
 
   const queueAssistantChunk = (nextChunk: string) => {
     pendingAssistantChunkRef.current += nextChunk;
   };
 
+  // Persist selected model across page reloads
+  useEffect(() => {
+    localStorage.setItem("chatbot-model", selectedModel);
+  }, [selectedModel]);
+
+  // Keep loadingRef in sync so the type() loop can read it without
+  // being listed in the effect deps (which would restart the loop).
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
   useEffect(() => {
     if (!streamingMessageId) return;
 
     let timeoutId: number;
+    let cancelled = false;
 
     const type = () => {
+      if (cancelled) return;
+
       const pending = pendingAssistantChunkRef.current;
       if (pending.length > 0) {
-        // Calculate how many characters to type in this tick
-        // Faster if the queue is backing up
+        // Drain faster when the queue is backing up
         const totalPending = pending.length;
         let charsToAdd = 1;
-
-        if (totalPending > 200) charsToAdd = 20;
+        if      (totalPending > 200) charsToAdd = 20;
         else if (totalPending > 100) charsToAdd = 10;
-        else if (totalPending > 50) charsToAdd = 5;
-        else if (totalPending > 20) charsToAdd = 2;
+        else if (totalPending > 50)  charsToAdd = 5;
+        else if (totalPending > 20)  charsToAdd = 2;
 
         const toDisplay = pending.slice(0, charsToAdd);
         pendingAssistantChunkRef.current = pending.slice(charsToAdd);
-
         updateAssistantMessage(streamingMessageId, toDisplay);
 
-        // Schedule next character
-        timeoutId = window.setTimeout(type, 16); // ~60fps target
+        timeoutId = window.setTimeout(type, 16); // ~60 fps
       } else {
-        if (!loading) {
-          // If we finished the network stream AND the queue is empty
+        if (!loadingRef.current) {
+          // Network stream finished AND queue is empty → done
           setStreamingMessageId(null);
         } else {
-          // Network still going but queue empty, wait/poll
+          // Network still in-flight, queue momentarily empty → poll
           timeoutId = window.setTimeout(type, 30);
         }
       }
@@ -162,9 +189,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
 
     type();
     return () => {
-      if (timeoutId) clearTimeout(timeoutId);
+      cancelled = true;
+      clearTimeout(timeoutId);
     };
-  }, [streamingMessageId, loading]);
+  // Only re-run when a NEW streaming session starts (id changes).
+  // `loading` is intentionally omitted — we read it via loadingRef.
+  }, [streamingMessageId]);
 
   const removeMessageById = (targetMessageId: string) => {
     setMessages((currentMessages) =>
@@ -204,10 +234,19 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
     loadChats();
   }, [isLoaded, user?.id]);
 
+  const lastScrollTimeRef = useRef(0);
   useEffect(() => {
+    const now = Date.now();
+    // Throttle scrolling during active streaming to prevent lag
+    // Only scroll every 100ms if we're in a loading state
+    if (loading && now - lastScrollTimeRef.current < 100) {
+      return;
+    }
+
     messagesEndRef.current?.scrollIntoView({
       behavior: loading ? "auto" : "smooth",
     });
+    lastScrollTimeRef.current = now;
   }, [messages, loading]);
 
   const selectChat = async (selectedChatId: string) => {

@@ -116,7 +116,7 @@ const CodeBlock = ({ code, language }: { code: string; language: string }) => {
   );
 };
 
-export const MarkdownRenderer = ({ content }: { content: string }) => {
+export const MarkdownRenderer = React.memo(({ content }: { content: string }) => {
   const normalizedContent = normalizeMarkdownContent(content);
 
   return (
@@ -185,4 +185,4 @@ export const MarkdownRenderer = ({ content }: { content: string }) => {
       </ReactMarkdown>
     </div>
   );
-};
+});

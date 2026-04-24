@@ -11,10 +11,7 @@ import {
   listChatsByUserId,
 } from "./chat.store";
 
-const writeSseEvent = (
-  res: Response,
-  payload: Record<string, unknown>,
-) => {
+const writeSseEvent = (res: Response, payload: Record<string, unknown>) => {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 };
 
@@ -108,7 +105,7 @@ export const sendMessage = async (req: Request, res: Response) => {
     }));
 
     // Get AI (Gemini or OpenAI)
-    const ai = getAIService(model || "gemini");
+    const ai = getAIService(model || "nvidia");
 
     // 🔥 STREAMING HEADERS
     res.setHeader("Content-Type", "text/event-stream");
