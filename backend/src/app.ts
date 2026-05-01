@@ -5,10 +5,12 @@ import chatRoutes from "./modules/chat/chat.routes";
 const app = express();
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow all origins
+    if (!origin) return callback(null, true);
     callback(null, true);
   },
   credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-user-id", "Accept", "Origin", "X-Requested-With"],
 }));
 app.use(express.json());
 
