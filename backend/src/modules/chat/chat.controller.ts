@@ -117,41 +117,57 @@ export const sendMessage = async (req: Request, res: Response) => {
 
     let fullResponse = "";
     let clientClosed = false;
+    const abortController = new AbortController();
 
     req.on("close", () => {
       clientClosed = true;
+      abortController.abort();
     });
 
     writeSseEvent(res, { type: "meta", chatId: String(chat._id) });
 
     try {
       // Stream chunks to the client as they arrive.
-      await ai.streamResponse(formattedMessages, (chunk: string) => {
-        if (clientClosed || res.writableEnded) {
-          return;
+      await ai.streamResponse(
+        formattedMessages,
+        (chunk: string) => {
+          if (clientClosed || res.writableEnded) {
+            return;
+          }
+
+          fullResponse += chunk;
+          writeSseEvent(res, { type: "chunk", content: chunk });
+        },
+        abortController.signal,
+      );
+
+      if (fullResponse) {
+        chat = await appendMessageToChat(String(chat._id), {
+          role: "assistant",
+          content: fullResponse,
+        });
+
+        if (!chat) {
+          throw new Error("Failed to save assistant response");
         }
-
-        fullResponse += chunk;
-        writeSseEvent(res, { type: "chunk", content: chunk });
-      });
-
-      if (clientClosed || res.writableEnded) {
-        return;
       }
 
-      chat = await appendMessageToChat(String(chat._id), {
-        role: "assistant",
-        content: fullResponse,
-      });
-
-      if (!chat) {
-        throw new Error("Failed to save assistant response");
+      if (!clientClosed && !res.writableEnded) {
+        writeSseEvent(res, { type: "done", chatId: String(chat._id) });
       }
-
-      writeSseEvent(res, { type: "done", chatId: String(chat._id) });
       res.end();
     } catch (streamError: any) {
       console.error("Streaming error:", streamError);
+
+      // Still try to save whatever response we got before the error
+      if (fullResponse && !clientClosed) {
+         try {
+           chat = await appendMessageToChat(String(chat!._id), {
+             role: "assistant",
+             content: fullResponse,
+           });
+         } catch(e) {}
+      }
 
       if (!clientClosed && !res.writableEnded) {
         writeSseEvent(res, {

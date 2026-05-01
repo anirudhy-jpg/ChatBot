@@ -75,6 +75,7 @@ interface ChatContextType {
   createNewChat: () => void;
   deleteChat: (chatId: string) => Promise<void>;
   loadChats: () => Promise<ChatListResponse>;
+  stopChat: () => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -113,6 +114,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
   // when `loading` flips to false.
   const loadingRef = useRef(false);
   const userId = user?.id ?? "";
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const stopChat = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  };
   const updateAssistantMessage = (
     targetMessageId: string,
     nextChunk: string,
@@ -282,6 +291,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
 
+    abortControllerRef.current = new AbortController();
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -295,6 +306,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
           chatId,
           model: selectedModel,
         }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok || !response.body) {
@@ -377,6 +389,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         setChatId(resolvedChatId);
       }
     } catch (err: any) {
+      if (err.name === "AbortError") {
+        // Ignored because user requested a stop. 
+        // The message is already updated with the streaming content chunks.
+        return;
+      }
+
       if (!pendingAssistantChunkRef.current) {
         removeMessageById(assistantMessageId);
       }
@@ -442,6 +460,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         createNewChat,
         deleteChat,
         loadChats,
+        stopChat,
       }}
     >
       {children}

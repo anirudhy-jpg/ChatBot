@@ -40,6 +40,7 @@ export class NvidiaAdapter implements AIService {
   async streamResponse(
     messages: Message[],
     onChunk: (chunk: string) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     if (!this.openai) {
       onChunk("NVIDIA not configured. Please add API key.");
@@ -56,6 +57,7 @@ export class NvidiaAdapter implements AIService {
     });
 
     for await (const chunk of stream) {
+      if (signal?.aborted) break;
       const text = chunk.choices[0]?.delta?.content || "";
       if (text) onChunk(text);
     }

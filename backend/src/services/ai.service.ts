@@ -9,5 +9,6 @@ export interface AIService {
   streamResponse(
     messages: Message[],
     onChunk: (chunk: string) => void,
+    signal?: AbortSignal,
   ): Promise<void>;
 }

@@ -145,6 +145,7 @@ export const ChatLayout = () => {
     userId,
     createNewChat,
     deleteChat,
+    stopChat,
   } = useChatContext();
 
   /* ── state ── */
@@ -1177,59 +1178,76 @@ export const ChatLayout = () => {
                     }}
                   />
 
-                  {/* Send button */}
+                  {/* Send/Stop button */}
                   <button
-                    type="submit"
-                    disabled={loading || !prompt.trim()}
-                    aria-label="Send message"
+                    type={loading ? "button" : "submit"}
+                    onClick={loading ? stopChat : undefined}
+                    disabled={!loading && !prompt.trim()}
+                    aria-label={loading ? "Stop generating" : "Send message"}
                     style={{
                       width: 36,
                       height: 36,
                       borderRadius: 10,
                       border: "none",
-                      background:
-                        loading || !prompt.trim()
+                      background: loading
+                        ? isDark
+                          ? "rgba(239,68,68,0.2)"
+                          : "rgba(239,68,68,0.15)"
+                        : !prompt.trim()
                           ? isDark
                             ? "rgba(99,102,241,0.25)"
                             : "rgba(99,102,241,0.2)"
                           : "linear-gradient(135deg,#6366f1,#7c3aed)",
-                      color: "white",
+                      color: loading ? "#ef4444" : "white",
                       cursor:
-                        loading || !prompt.trim() ? "not-allowed" : "pointer",
+                        !loading && !prompt.trim() ? "not-allowed" : "pointer",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       flexShrink: 0,
                       boxShadow:
-                        loading || !prompt.trim()
-                          ? "none"
-                          : "0 4px 12px rgba(99,102,241,0.4)",
+                        !loading && prompt.trim()
+                          ? "0 4px 12px rgba(99,102,241,0.4)"
+                          : "none",
                       transition:
                         "opacity 0.15s, transform 0.15s, box-shadow 0.15s",
                     }}
                     onMouseEnter={(e) => {
-                      if (!loading && prompt.trim())
+                      if (loading || prompt.trim()) {
                         (e.currentTarget as HTMLButtonElement).style.transform =
                           "scale(1.06)";
+                      }
                     }}
                     onMouseLeave={(e) => {
                       (e.currentTarget as HTMLButtonElement).style.transform =
                         "scale(1)";
                     }}
                   >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <line x1="22" y1="2" x2="11" y2="13" />
-                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                    </svg>
+                    {loading ? (
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        stroke="none"
+                      >
+                        <rect x="6" y="6" width="12" height="12" rx="2" />
+                      </svg>
+                    ) : (
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <line x1="22" y1="2" x2="11" y2="13" />
+                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      </svg>
+                    )}
                   </button>
                 </div>
 

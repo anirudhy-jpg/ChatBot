@@ -42,6 +42,7 @@ export class GeminiAdapter implements AIService {
   async streamResponse(
     messages: Message[],
     onChunk: (chunk: string) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     if (!this.ai) {
       onChunk("Gemini API key not configured.");
@@ -66,6 +67,7 @@ export class GeminiAdapter implements AIService {
     });
 
     for await (const chunk of stream) {
+      if (signal?.aborted) break;
       const text = chunk.text;
       if (text) onChunk(text);
     }
