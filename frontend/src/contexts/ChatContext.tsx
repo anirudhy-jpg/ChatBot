@@ -294,7 +294,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch("/api/chat", {
+      const API_URL = (import.meta as any).env?.VITE_API_URL || "http://localhost:5000/api";
+      const response = await fetch(`${API_URL}/chat`, {
         method: "POST",
         headers: {
           Accept: "text/event-stream",
