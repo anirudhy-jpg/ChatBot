@@ -166,10 +166,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
         // Drain faster when the queue is backing up
         const totalPending = pending.length;
         let charsToAdd = 1;
-        if      (totalPending > 200) charsToAdd = 20;
+        if (totalPending > 200) charsToAdd = 20;
         else if (totalPending > 100) charsToAdd = 10;
-        else if (totalPending > 50)  charsToAdd = 5;
-        else if (totalPending > 20)  charsToAdd = 2;
+        else if (totalPending > 50) charsToAdd = 5;
+        else if (totalPending > 20) charsToAdd = 2;
 
         const toDisplay = pending.slice(0, charsToAdd);
         pendingAssistantChunkRef.current = pending.slice(charsToAdd);
@@ -192,8 +192,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  // Only re-run when a NEW streaming session starts (id changes).
-  // `loading` is intentionally omitted — we read it via loadingRef.
+    // Only re-run when a NEW streaming session starts (id changes).
+    // `loading` is intentionally omitted — we read it via loadingRef.
   }, [streamingMessageId]);
 
   const removeMessageById = (targetMessageId: string) => {
